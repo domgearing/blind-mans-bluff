@@ -13,7 +13,9 @@ app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'bmb_secret_key_change_m
 
 # Support both SQLite (local) and PostgreSQL (Render / any hosted DB).
 # Render supplies DATABASE_URL starting with "postgres://"; SQLAlchemy needs "postgresql://".
-_db_url = os.environ.get('DATABASE_URL', 'sqlite:///game.db')
+# Use /tmp for SQLite on hosted servers — guaranteed writable on any Linux host.
+_default_db = 'sqlite:///' + os.path.join('/tmp', 'game.db')
+_db_url = os.environ.get('DATABASE_URL', _default_db)
 if _db_url.startswith('postgres://'):
     _db_url = _db_url.replace('postgres://', 'postgresql://', 1)
 app.config['SQLALCHEMY_DATABASE_URI'] = _db_url
@@ -523,6 +525,4 @@ if __name__ == '__main__':
     print('=' * 52)
     print()
 
-    # allow_unsafe_werkzeug suppresses the production warning from Flask-SocketIO;
-    # for a private 5-person game Werkzeug's threaded server is perfectly adequate.
-    socketio.run(app, host='0.0.0.0', port=port, debug=False, allow_unsafe_werkzeug=True)
+    socketio.run(app, host='0.0.0.0', port=port, debug=False)
