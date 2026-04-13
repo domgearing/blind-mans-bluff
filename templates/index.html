@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>Blind Man's Bluff</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+
+  <!-- Full-screen colour flash overlay (green/red/blue signals) -->
+  <div id="flash"></div>
+
+  <!-- Toast notification -->
+  <div id="toast"></div>
+
+  <!-- ══════════════════════════════════════════════
+       SCREEN: Login
+  ══════════════════════════════════════════════ -->
+  <div id="s-login" class="screen active">
+    <div class="logo-area">
+      <div class="logo-card">🃏</div>
+      <h1>Blind Man's Bluff</h1>
+      <p class="subtitle">5-player card deduction</p>
+    </div>
+
+    <div class="login-form">
+      <input id="username-input" type="text" placeholder="Enter your username"
+             maxlength="20" autocomplete="off" autocorrect="off"
+             autocapitalize="off" spellcheck="false">
+      <button id="login-btn" class="btn btn-primary btn-lg">Enter Game</button>
+    </div>
+
+    <div id="stats-box" class="stats-box hidden"></div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════
+       SCREEN: Lobby
+  ══════════════════════════════════════════════ -->
+  <div id="s-lobby" class="screen">
+    <h2 class="screen-title">Game Lobby</h2>
+    <div id="player-count" class="player-count"></div>
+    <div id="player-list" class="player-list"></div>
+
+    <div class="section-label">Choose a suit for this round:</div>
+    <div class="suit-grid">
+      <button class="suit-btn suit-red" data-suit="Hearts">♥<br>Hearts</button>
+      <button class="suit-btn suit-red" data-suit="Diamonds">♦<br>Diamonds</button>
+      <button class="suit-btn" data-suit="Clubs">♣<br>Clubs</button>
+      <button class="suit-btn" data-suit="Spades">♠<br>Spades</button>
+    </div>
+
+    <button id="motion-perm-btn" class="btn btn-secondary hidden">
+      Enable Motion Sensor (iOS)
+    </button>
+
+    <button id="ready-btn" class="btn btn-primary btn-lg" disabled>
+      I'm Ready!
+    </button>
+
+    <div id="lobby-status" class="lobby-status"></div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════
+       SCREEN: Countdown
+  ══════════════════════════════════════════════ -->
+  <div id="s-countdown" class="screen">
+    <div id="countdown-msg" class="countdown-msg">
+      Place your phone on your forehead!
+    </div>
+    <div id="countdown-number" class="countdown-number">5</div>
+    <div class="countdown-hint">Card flips when countdown ends — don't peek!</div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════
+       SCREEN: Game (card display)
+  ══════════════════════════════════════════════ -->
+  <div id="s-game" class="screen game-screen">
+
+    <!-- Small status bar at top -->
+    <div id="turn-indicator" class="turn-indicator"></div>
+
+    <!-- The playing card — takes up most of the screen -->
+    <div id="card-area" class="card-area">
+      <div id="game-card" class="card">
+        <div class="card-corner top-left">
+          <div class="card-corner-value" id="tl-value"></div>
+          <div class="card-corner-suit"  id="tl-suit"></div>
+        </div>
+        <div class="card-center">
+          <div class="card-center-suit" id="center-suit"></div>
+        </div>
+        <div class="card-corner bottom-right">
+          <div class="card-corner-value" id="br-value"></div>
+          <div class="card-corner-suit"  id="br-suit"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Shown only when it's THIS player's turn -->
+    <div id="your-turn-banner" class="your-turn-banner hidden">
+      <span class="turn-label">YOUR TURN</span>
+      <span class="turn-hint">Tilt phone right-to-left when done speaking</span>
+      <button id="manual-done-btn" class="btn btn-secondary btn-sm">
+        Done ✓ (tap if tilt fails)
+      </button>
+    </div>
+
+    <!-- Final-round announcement overlay (appears briefly) -->
+    <div id="round-announce" class="round-announce hidden">
+      <div class="announce-title" id="announce-title"></div>
+      <div class="announce-sub"   id="announce-sub"></div>
+    </div>
+
+    <!-- Motion sensor status (small, bottom corner) -->
+    <div id="motion-status" class="motion-status"></div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════
+       SCREEN: Final Guess
+  ══════════════════════════════════════════════ -->
+  <div id="s-final" class="screen">
+    <h2 class="screen-title final-title">FINAL ROUND</h2>
+
+    <div id="waiting-label"   class="waiting-label hidden"></div>
+    <div id="guess-progress"  class="guess-progress"></div>
+
+    <div id="final-guess-form">
+
+      <!-- Voice input -->
+      <div class="voice-section">
+        <button id="mic-btn" class="btn btn-mic">🎤 Speak Your Guess</button>
+        <div id="transcript"   class="transcript"></div>
+        <div id="parsed-result" class="parsed-result"></div>
+      </div>
+
+      <div class="divider">— or select manually —</div>
+
+      <!-- Manual: position -->
+      <div class="guess-section">
+        <div class="guess-label">Your position:</div>
+        <div class="pos-grid">
+          <button class="pos-btn" data-pos="0">Lowest</button>
+          <button class="pos-btn" data-pos="1">2nd Lowest</button>
+          <button class="pos-btn" data-pos="2">Middle</button>
+          <button class="pos-btn" data-pos="3">2nd Highest</button>
+          <button class="pos-btn" data-pos="4">Highest</button>
+        </div>
+      </div>
+
+      <!-- Manual: card value -->
+      <div class="guess-section">
+        <div class="guess-label">Your card:</div>
+        <div id="card-btns" class="card-grid"></div>
+      </div>
+
+      <button id="confirm-guess-btn" class="btn btn-primary btn-lg" disabled>
+        Confirm Guess
+      </button>
+    </div>
+
+    <div id="guess-submitted-msg" class="guess-submitted hidden">
+      ✓ Guess locked in! Waiting for others…
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════
+       SCREEN: Results
+  ══════════════════════════════════════════════ -->
+  <div id="s-results" class="screen">
+    <div id="result-banner" class="result-banner"></div>
+
+    <div class="results-scroll">
+      <table class="results-table">
+        <thead>
+          <tr>
+            <th>Player</th>
+            <th>Card</th>
+            <th>Actual Pos</th>
+            <th>Pos Guess</th>
+            <th>Card Guess</th>
+            <th>Off by</th>
+          </tr>
+        </thead>
+        <tbody id="results-body"></tbody>
+      </table>
+    </div>
+
+    <div class="results-actions">
+      <button id="replay-btn"      class="btn btn-secondary">Watch Replay</button>
+      <button id="play-again-btn"  class="btn btn-primary">Play Again</button>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════
+       SCREEN: Replay
+  ══════════════════════════════════════════════ -->
+  <div id="s-replay" class="screen">
+    <div id="replay-phase" class="replay-phase">Replay</div>
+
+    <div id="replay-circle-container" class="replay-circle-container">
+      <div id="replay-circle" class="replay-circle"></div>
+    </div>
+
+    <div class="results-actions">
+      <button id="back-to-results-btn"        class="btn btn-secondary">Results</button>
+      <button id="play-again-from-replay-btn" class="btn btn-primary">Play Again</button>
+    </div>
+  </div>
+
+  <!-- Socket.IO client -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"
+          integrity="sha512-OPiKPBJSdL7+5BXOT35OqPdPQAAEfRdwEEZTLx2+GxFUlALByEOiUk13q8o3x/l3M+8YBz3q5KKN+E3kzYcQ=="
+          crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <script src="/static/js/app.js"></script>
+</body>
+</html>
