@@ -763,7 +763,7 @@ function setupSpeech() {
     return;
   }
   speechRec = new SR();
-  speechRec.continuous    = false;
+  speechRec.continuous     = true;   // don't auto-stop after a pause
   speechRec.interimResults = true;
   speechRec.lang           = 'en-US';
 
@@ -793,17 +793,34 @@ function setupSpeech() {
   };
 
   speechRec.onend = () => {
-    const btn = document.getElementById('mic-btn');
-    if (btn) { btn.classList.remove('recording'); btn.textContent = '🎤 Speak Your Guess'; }
+    // Final round: if the user hasn't tapped to stop, the browser ended early
+    // (iOS does this even with continuous=true). Restart immediately.
+    if (S.isFinalRound && finalVoice.recording) {
+      try { speechRec.start(); } catch (_) {}
+      return;
+    }
 
-    // Final-round: submit once all results have arrived
+    // Final round: submit once recording has fully stopped
     if (S.isFinalRound && finalVoice.submitOnEnd) {
       finalVoice.submitOnEnd = false;
       submitFinalGuess();
+      return;
     }
+
+    const btn = document.getElementById('mic-btn');
+    if (btn) { btn.classList.remove('recording'); btn.textContent = '🎤 Speak Your Guess'; }
   };
 
-  speechRec.onerror = () => {
+  speechRec.onerror = (e) => {
+    // 'aborted' fires when we call speechRec.stop() intentionally — ignore it
+    if (e.error === 'aborted') return;
+
+    // During final-round recording, restart on transient errors (no-speech, network, etc.)
+    if (S.isFinalRound && finalVoice.recording) {
+      try { speechRec.start(); } catch (_) {}
+      return;
+    }
+
     const btn = document.getElementById('mic-btn');
     if (btn) { btn.classList.remove('recording'); btn.textContent = '🎤 Speak Your Guess'; }
   };
