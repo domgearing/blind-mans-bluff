@@ -6,7 +6,30 @@
       "Bash(python3 -c \"import flask; print\\('flask ok'\\)\")",
       "Bash(pip3 install:*)",
       "Bash(python3 -c \"import app; print\\('OK'\\)\")",
-      "Bash(python3 -c \"import app; print\\('startup OK'\\)\")"
+      "Bash(python3 -c \"import app; print\\('startup OK'\\)\")",
+      "Bash(git -C /Users/domgearing/Desktop/blind_mans_bluff status)",
+      "Bash(git -C /Users/domgearing/Desktop/blind_mans_bluff diff --name-only HEAD)",
+      "Bash(git -C /Users/domgearing/Desktop/blind_mans_bluff log --oneline -5)",
+      "Bash(git -C /Users/domgearing/Desktop/blind_mans_bluff show --stat HEAD)",
+      "Bash(git -C /Users/domgearing/Desktop/blind_mans_bluff status --short)",
+      "Bash(git -C /Users/domgearing/Desktop/blind_mans_bluff diff app.py)",
+      "Bash(git -C /Users/domgearing/Desktop/blind_mans_bluff ls-files app.py templates/index.html static/js/app.js static/css/style.css)",
+      "Bash(git -C /Users/domgearing/Desktop/blind_mans_bluff show HEAD:app.py)",
+      "Bash(git -C /Users/domgearing/Desktop/blind_mans_bluff show d5b65bd --stat)",
+      "Bash(git -C /Users/domgearing/Desktop/blind_mans_bluff remote -v)",
+      "Bash(git -C /Users/domgearing/Desktop/blind_mans_bluff show HEAD:templates/index.html)",
+      "Bash(curl -s -o /Users/domgearing/Desktop/blind_mans_bluff/static/js/socket.io.min.js \"https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js\")",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(git -C /Users/domgearing/Desktop/blind_mans_bluff add app.py static/js/app.js)",
+      "Bash(git -C /Users/domgearing/Desktop/blind_mans_bluff commit -m \"Fix turn order, bot ready state, motion thresholds, SVG face cards\")",
+      "Bash(git -C /Users/domgearing/Desktop/blind_mans_bluff push)",
+      "Bash(curl -s -o /tmp/svg-cards.svg \"https://raw.githubusercontent.com/htdebeer/SVG-cards/master/svg-cards.svg\")",
+      "Read(//tmp/**)",
+      "Bash(curl -s -o /tmp/test_JH.png \"https://deckofcardsapi.com/static/img/JH.png\")",
+      "Bash(git -C /Users/domgearing/Desktop/blind_mans_bluff add static/js/app.js)",
+      "Bash(git -C /Users/domgearing/Desktop/blind_mans_bluff commit -m \"Tilt detection: only trigger on gamma \\(left-right roll\\), ignore head turns\")"
     ]
   }
 }
