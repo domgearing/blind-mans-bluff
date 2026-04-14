@@ -136,6 +136,7 @@ socket.on('show_card', (data) => {
   S.myCard = data;
   renderGameCard(data);
   showScreen('s-game');
+  syncCardAreaOffset();   // ensure no stale overlay-active class at game start
   // Start monitoring motion (enables tilt-to-signal)
   activateMotionMonitor();
 });
@@ -197,7 +198,6 @@ socket.on('red_buzz', () => {
 
 socket.on('prompt_final_guess', () => {
   // Stay on game screen — show the final-round overlay at the bottom
-  document.getElementById('final-round-overlay').classList.remove('hidden');
   updateFinalOverlay('watching');
 });
 
@@ -534,7 +534,9 @@ function updateFinalOverlay(state) {
   const manualStop  = document.getElementById('fro-manual-stop');
   if (!overlay) return;
 
+  overlay.classList.remove('hidden');  // ensure visible whenever called
   overlay.classList.remove('recording');
+  syncCardAreaOffset();
   manualStart.classList.add('hidden');
   manualStop.classList.add('hidden');
 
@@ -778,6 +780,18 @@ function resetLobby() {
 //  TURN INDICATOR & BANNER
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** Toggle .overlay-active on card-area based on whether any bottom panel is visible */
+function syncCardAreaOffset() {
+  const banner  = document.getElementById('your-turn-banner');
+  const overlay = document.getElementById('final-round-overlay');
+  const cardArea = document.getElementById('card-area');
+  if (!cardArea) return;
+  const hasOverlay =
+    (banner  && !banner.classList.contains('hidden')) ||
+    (overlay && !overlay.classList.contains('hidden'));
+  cardArea.classList.toggle('overlay-active', hasOverlay);
+}
+
 function updateTurnIndicator(data) {
   const el = document.getElementById('turn-indicator');
   if (!el) return;
@@ -788,11 +802,13 @@ function updateTurnIndicator(data) {
 
 function showTurnBanner() {
   document.getElementById('your-turn-banner').classList.remove('hidden');
+  syncCardAreaOffset();
 }
 
 function hideTurnBanner() {
   const b = document.getElementById('your-turn-banner');
   if (b) b.classList.add('hidden');
+  syncCardAreaOffset();
 }
 
 function showRoundAnnounce(title, sub) {
