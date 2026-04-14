@@ -377,9 +377,9 @@ def on_turn_complete():
         starter_sid    = None
 
         if round_done:
-            G.round_num   += 1
-            G.starting_idx = (G.starting_idx + 1) % len(G.player_order)
-            G.turn_offset  = 0
+            G.round_num  += 1
+            G.turn_offset = 0
+            # starting_idx does NOT rotate between rounds — same player starts all 3
             if G.round_num < 2:
                 next_round_num = G.round_num + 1
                 next_starter   = G.current_player()
@@ -427,9 +427,9 @@ def _bot_playing_turn(username):
             next_round_num = None
             next_starter   = None
             if round_done:
-                G.round_num   += 1
-                G.starting_idx = (G.starting_idx + 1) % len(G.player_order)
-                G.turn_offset  = 0
+                G.round_num  += 1
+                G.turn_offset = 0
+                # starting_idx does NOT rotate between rounds
                 if G.round_num < 2:
                     next_round_num = G.round_num + 1
                     next_starter   = G.current_player()
@@ -612,6 +612,7 @@ def on_play_again():
         if G.phase != 'results':
             return
         saved_bots  = set(G.bots)
+        next_idx    = (G.starting_idx + 1) % len(G.player_order) if G.player_order else 0
         # Bots stay ready; humans reset to not-ready
         saved       = {sid: {'username': d['username'],
                              'ready': d['username'] in saved_bots}
@@ -621,6 +622,11 @@ def on_play_again():
         G.players      = saved
         G.player_order = saved_order
         G.bots         = saved_bots
+        G.starting_idx = next_idx
+        # Guarantee bot ready flags are set (defensive)
+        for player in G.players.values():
+            if player['username'] in G.bots:
+                player['ready'] = True
     socketio.emit('return_to_lobby', {'players': G.players_list()}, room=GAME_ROOM)
 
 # ─── Entry Point ──────────────────────────────────────────────────────────────

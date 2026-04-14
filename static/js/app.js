@@ -372,15 +372,16 @@ function onDeviceMotion(e) {
     Math.pow(rr.gamma || 0, 2)
   );
 
-  const STABLE_THRESHOLD = 25;  // °/s — considered still
-  const TILT_THRESHOLD   = 100; // °/s — fast deliberate tilt
+  const STABLE_THRESHOLD = 22;  // °/s — considered still
+  const TILT_THRESHOLD   = 75;  // °/s — deliberate tilt (lowered for reliability)
 
   if (speed < STABLE_THRESHOLD) {
     if (!mot.stableTimer) {
       mot.stableTimer = setTimeout(() => {
         mot.wasStable = true;
         mot.stableTimer = null;
-      }, 600);
+        setMotionStatus('Motion: ready ✓');
+      }, 500);
     }
   } else {
     clearTimeout(mot.stableTimer);
@@ -389,17 +390,18 @@ function onDeviceMotion(e) {
     if (speed >= TILT_THRESHOLD && mot.wasStable) {
       mot.wasStable = false;
       mot.cooldown  = true;
-      // Shorter cooldown in final round so tilt-1 → tilt-2 can happen within ~2s
-      const cooldownMs = S.isFinalRound ? 1800 : 3000;
+      const cooldownMs = S.isFinalRound ? 1800 : 2500;
       setTimeout(() => { mot.cooldown = false; }, cooldownMs);
+      setMotionStatus('Motion: fired');
 
       if (S.isFinalRound) {
         handleFinalRoundTilt();
       } else {
         socket.emit('turn_complete');
       }
-    } else if (speed < TILT_THRESHOLD) {
-      mot.wasStable = false;
+    } else if (speed >= TILT_THRESHOLD && !mot.wasStable) {
+      // Tilt before stable — give feedback so user knows to hold still first
+      setMotionStatus('Hold still first…');
     }
   }
 }
@@ -547,16 +549,13 @@ const PIP_LAYOUTS = {
   '10': [[28,10,false],[72,10,false],[50,26,false],[28,42,false],[72,42,false],[28,58,true],[72,58,true],[50,74,true],[28,90,true],[72,90,true]],
 };
 
-const FACE_LABELS = { J: 'Jack', Q: 'Queen', K: 'King' };
-const FACE_GLYPHS = { J: 'J', Q: 'Q', K: 'K' };
-
 function renderGameCard(data) {
   const card = document.getElementById('game-card');
   const isRed = data.color === 'red';
   card.className = 'card ' + (isRed ? 'card-red' : 'card-black');
 
-  const val = data.value;
-  const sym = data.symbol;
+  const val     = data.value;
+  const sym     = data.symbol;
   const dispVal = displayValue(val);
 
   document.getElementById('tl-value').textContent = dispVal;
@@ -564,9 +563,8 @@ function renderGameCard(data) {
   document.getElementById('br-value').textContent = dispVal;
   document.getElementById('br-suit').textContent  = sym;
 
-  const center = document.getElementById('card-center-area');
+  const center   = document.getElementById('card-center-area');
   const pipColor = isRed ? 'pip-red' : 'pip-black';
-  const faceColor = isRed ? 'var(--red-suit)' : '#111';
 
   if (val === 'A') {
     center.innerHTML = `<div class="pip pip-ace ${pipColor}">${sym}</div>`;
@@ -576,17 +574,93 @@ function renderGameCard(data) {
     ).join('');
     center.innerHTML = `<div class="pip-area">${pips}</div>`;
   } else {
-    // Face card — J / Q / K
-    center.innerHTML = `
-      <div class="face-card" style="color:${faceColor}">
-        <div class="face-label">${FACE_LABELS[val] || val}</div>
-        <div class="face-inner">
-          <div class="face-glyph">${FACE_GLYPHS[val] || val}</div>
-          <div class="face-suit-row">${sym}${sym}${sym}</div>
-        </div>
-        <div class="face-label" style="transform:rotate(180deg)">${FACE_LABELS[val] || val}</div>
-      </div>`;
+    center.innerHTML = buildFaceCardSVG(val, sym, isRed);
   }
+}
+
+function buildFaceCardSVG(val, sym, isRed) {
+  const c   = isRed ? '#c8102e' : '#1a1a1a';
+  const bg  = isRed ? '#fff5f5' : '#f5f5f5';
+  const acc = isRed ? '#ff6b6b' : '#555';
+
+  // Portrait glyphs: use chess pieces which look like traditional card faces
+  const portraits = { K: '♚', Q: '♛', J: '♞' };
+  const labels    = { K: 'KING', Q: 'QUEEN', J: 'JACK' };
+  const portrait  = portraits[val] || val;
+  const label     = labels[val] || val;
+
+  // Crown for K/Q, plume for J
+  const headpiece = {
+    K: `<path d="M38,28 L50,18 L62,28 L66,22 L50,14 L34,22 Z" fill="${c}"/>
+        <rect x="35" y="27" width="30" height="5" rx="2" fill="${c}"/>`,
+    Q: `<path d="M40,30 L50,20 L60,30 L63,24 L50,15 L37,24 Z" fill="${c}"/>
+        <circle cx="50" cy="15" r="3" fill="${acc}"/>`,
+    J: `<path d="M46,20 Q50,12 54,20 Q58,14 56,22" stroke="${c}" stroke-width="2" fill="none"/>
+        <circle cx="50" cy="22" r="2.5" fill="${c}"/>`,
+  }[val] || '';
+
+  // Held item
+  const item = {
+    K: `<line x1="58" y1="58" x2="70" y2="90" stroke="${c}" stroke-width="3" stroke-linecap="round"/>
+        <rect x="55" y="55" width="9" height="6" rx="1" fill="${c}"/>`,
+    Q: `<line x1="62" y1="62" x2="68" y2="85" stroke="${c}" stroke-width="2.5" stroke-linecap="round"/>
+        <circle cx="68" cy="88" r="4" fill="${acc}"/>`,
+    J: `<line x1="60" y1="60" x2="74" y2="88" stroke="${c}" stroke-width="2.5" stroke-linecap="round"/>
+        <path d="M70,84 L78,80 L74,88 Z" fill="${c}"/>`,
+  }[val] || '';
+
+  return `<svg viewBox="0 0 100 145" xmlns="http://www.w3.org/2000/svg"
+      style="width:76%;height:76%;overflow:visible;display:block">
+    <!-- Card face background -->
+    <rect width="100" height="145" rx="0" fill="white"/>
+    <!-- Colored band top -->
+    <rect x="0" y="0" width="100" height="48" fill="${c}" opacity="0.07"/>
+    <!-- Colored band bottom (mirrored) -->
+    <rect x="0" y="97" width="100" height="48" fill="${c}" opacity="0.07"/>
+    <!-- Inner border -->
+    <rect x="4" y="4" width="92" height="137" rx="3" fill="none" stroke="${c}" stroke-width="1.2" opacity="0.35"/>
+
+    <!-- ── Top label ── -->
+    <text x="50" y="13" text-anchor="middle" font-family="Georgia,serif"
+          font-size="8" font-weight="700" fill="${c}" letter-spacing="1">${label}</text>
+
+    <!-- ── Portrait (top half) ── -->
+    ${headpiece}
+    <!-- Head -->
+    <circle cx="50" cy="40" r="10" fill="${bg}" stroke="${c}" stroke-width="1.8"/>
+    <!-- Face details -->
+    <circle cx="46.5" cy="39" r="1.3" fill="${c}"/>
+    <circle cx="53.5" cy="39" r="1.3" fill="${c}"/>
+    <path d="M46,43 Q50,46 54,43" stroke="${c}" stroke-width="1.2" fill="none" stroke-linecap="round"/>
+    <!-- Body -->
+    <path d="M36,52 Q50,48 64,52 L66,82 Q50,86 34,82 Z" fill="${bg}" stroke="${c}" stroke-width="1.5"/>
+    <!-- Collar -->
+    <path d="M44,52 L50,58 L56,52" stroke="${c}" stroke-width="1.5" fill="none"/>
+    <!-- Suit symbol on chest -->
+    <text x="50" y="74" text-anchor="middle" font-size="10" fill="${c}" opacity="0.5">${sym}</text>
+    ${item}
+
+    <!-- ── Divider ── -->
+    <line x1="10" y1="93" x2="90" y2="93" stroke="${c}" stroke-width="0.8" opacity="0.3"/>
+
+    <!-- ── Bottom (rotated portrait) ── -->
+    <g transform="rotate(180 50 118.5)">
+      ${headpiece}
+      <circle cx="50" cy="40" r="10" fill="${bg}" stroke="${c}" stroke-width="1.8"/>
+      <circle cx="46.5" cy="39" r="1.3" fill="${c}"/>
+      <circle cx="53.5" cy="39" r="1.3" fill="${c}"/>
+      <path d="M46,43 Q50,46 54,43" stroke="${c}" stroke-width="1.2" fill="none" stroke-linecap="round"/>
+      <path d="M36,52 Q50,48 64,52 L66,82 Q50,86 34,82 Z" fill="${bg}" stroke="${c}" stroke-width="1.5"/>
+      <path d="M44,52 L50,58 L56,52" stroke="${c}" stroke-width="1.5" fill="none"/>
+      <text x="50" y="74" text-anchor="middle" font-size="10" fill="${c}" opacity="0.5">${sym}</text>
+      ${item}
+    </g>
+
+    <!-- ── Bottom label ── -->
+    <text x="50" y="142" text-anchor="middle" font-family="Georgia,serif"
+          font-size="8" font-weight="700" fill="${c}" letter-spacing="1"
+          transform="rotate(180 50 138)">${label}</text>
+  </svg>`;
 }
 
 function displayValue(v) {
