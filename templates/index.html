@@ -227,10 +227,8 @@
     </div>
   </div>
 
-  <!-- Socket.IO client -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"
-          integrity="sha512-OPiKPBJSdL7+5BXOT35OqPdPQAAEfRdwEEZTLx2+GxFUlALByEOiUk13q8o3x/l3M+8YBz3q5KKN+E3kzYcQ=="
-          crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <!-- Socket.IO client (served locally to avoid CDN/integrity issues) -->
+  <script src="/static/js/socket.io.min.js"></script>
   <script src="/static/js/app.js"></script>
 </body>
 </html>
