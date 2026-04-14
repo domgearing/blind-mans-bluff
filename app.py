@@ -67,6 +67,7 @@ class GameState:
         self.phase        = 'lobby'    # lobby | countdown | playing | final_round | results
         self.players      = {}         # sid -> {username, ready}
         self.player_order = []         # ordered list of usernames (join order = clockwise)
+        self.bots         = set()      # usernames that are bots (no real socket)
         self.cards        = {}         # username -> {value, numeric}
         self.suit         = None
         self.round_num    = 0          # 0 = round 1, 1 = round 2, 2 = final round
@@ -97,7 +98,8 @@ class GameState:
         return {u: i for i, (u, _) in enumerate(sorted_p)}
 
     def players_list(self):
-        return [{'username': p['username'], 'ready': p['ready']}
+        return [{'username': p['username'], 'ready': p['ready'],
+                 'is_bot': p['username'] in self.bots}
                 for p in self.players.values()]
 
     @property
@@ -240,6 +242,49 @@ def on_ready():
     if start_now:
         socketio.start_background_task(_run_countdown)
 
+@socketio.on('add_bot')
+def on_add_bot():
+    with _lock:
+        if G.phase != 'lobby':
+            return emit('error', {'msg': 'Can only add bots in the lobby.'})
+        if G.count >= MAX_PLAYERS:
+            return emit('error', {'msg': 'Lobby is full (5 players max).'})
+        existing_names = {p['username'] for p in G.players.values()}
+        bot_name = None
+        for i in range(1, 10):
+            candidate = f'Bot{i}'
+            if candidate not in existing_names:
+                bot_name = candidate
+                break
+        if bot_name is None:
+            return emit('error', {'msg': 'Could not create a bot.'})
+        bot_sid = f'__bot__{bot_name}'
+        G.players[bot_sid] = {'username': bot_name, 'ready': True}
+        G.player_order.append(bot_name)
+        G.bots.add(bot_name)
+        start_now = G.suit and G.all_ready
+    socketio.emit('player_joined', {
+        'username': bot_name,
+        'players':  G.players_list(),
+        'is_bot':   True,
+    }, room=GAME_ROOM)
+    if start_now:
+        socketio.start_background_task(_run_countdown)
+
+@socketio.on('remove_bots')
+def on_remove_bots():
+    with _lock:
+        if G.phase != 'lobby':
+            return emit('error', {'msg': 'Can only remove bots in the lobby.'})
+        bot_sids = [sid for sid, p in G.players.items() if p['username'] in G.bots]
+        for sid in bot_sids:
+            username = G.players[sid]['username']
+            if username in G.player_order:
+                G.player_order.remove(username)
+            del G.players[sid]
+        G.bots.clear()
+    socketio.emit('bots_removed', {'players': G.players_list()}, room=GAME_ROOM)
+
 # ─── Background: Countdown → Deal → Game ──────────────────────────────────────
 def _run_countdown():
     with app.app_context():
@@ -285,12 +330,12 @@ def _run_countdown():
         _announce_turn()
 
 def _announce_turn():
-    """Emit turn_started to all, and your_turn to the current player."""
+    """Emit turn_started to all, your_turn to the current human, or schedule a bot action."""
     current = G.current_player()
     if not current:
         return
-    sid = G.sid_of(current)
     is_final = (G.phase == 'final_round')
+    is_bot   = current in G.bots
 
     socketio.emit('turn_started', {
         'player':        current,
@@ -300,11 +345,18 @@ def _announce_turn():
         'is_final':      is_final,
     }, room=GAME_ROOM)
 
-    if sid:
-        socketio.emit('your_turn', {
-            'round':    G.round_num + 1,
-            'is_final': is_final,
-        }, room=sid)
+    if is_bot:
+        if is_final:
+            socketio.start_background_task(_bot_final_guess, current)
+        else:
+            socketio.start_background_task(_bot_playing_turn, current)
+    else:
+        sid = G.sid_of(current)
+        if sid:
+            socketio.emit('your_turn', {
+                'round':    G.round_num + 1,
+                'is_final': is_final,
+            }, room=sid)
 
 # ─── Socket: Playing Rounds (1 & 2) ──────────────────────────────────────────
 @socketio.on('turn_complete')
@@ -358,6 +410,71 @@ def _delayed_turn(delay):
     with app.app_context():
         time.sleep(delay)
         _announce_turn()
+
+# ─── Bot Actions ──────────────────────────────────────────────────────────────
+def _bot_playing_turn(username):
+    """Bot waits a moment then signals its turn is done (like a human tilting)."""
+    with app.app_context():
+        time.sleep(random.uniform(1.5, 3.0))
+        with _lock:
+            if G.phase != 'playing' or G.current_player() != username:
+                return
+            G.turn_offset += 1
+            round_done     = G.turn_offset >= len(G.player_order)
+            start_final    = False
+            starter        = None
+            starter_sid    = None
+            next_round_num = None
+            next_starter   = None
+            if round_done:
+                G.round_num   += 1
+                G.starting_idx = (G.starting_idx + 1) % len(G.player_order)
+                G.turn_offset  = 0
+                if G.round_num < 2:
+                    next_round_num = G.round_num + 1
+                    next_starter   = G.current_player()
+                else:
+                    start_final = True
+                    G.phase     = 'final_round'
+                    starter     = G.current_player()
+                    starter_sid = G.sid_of(starter) if starter not in G.bots else None
+
+        socketio.emit('turn_ended', {'player': username}, room=GAME_ROOM)
+        if round_done:
+            if not start_final:
+                socketio.emit('next_round', {'round': next_round_num, 'starter': next_starter}, room=GAME_ROOM)
+                socketio.start_background_task(_delayed_turn, 1.5)
+            else:
+                socketio.emit('final_round_start', {'starter': starter}, room=GAME_ROOM)
+                if starter_sid:
+                    socketio.emit('red_buzz', {}, room=starter_sid)
+                socketio.start_background_task(_launch_final_round)
+        else:
+            socketio.start_background_task(_delayed_turn, 0.5)
+
+def _bot_final_guess(username):
+    """Bot waits a moment then submits a random final guess."""
+    with app.app_context():
+        time.sleep(random.uniform(2.0, 4.0))
+        with _lock:
+            if G.phase != 'final_round' or G.current_player() != username:
+                return
+            if username in G.final_guesses:
+                return
+            G.final_guesses[username] = {
+                'position':     random.randint(0, 4),
+                'card_numeric': random.randint(1, 13),
+            }
+            G.turn_offset += 1
+            all_done = len(G.final_guesses) == len(G.player_order)
+            count    = len(G.final_guesses)
+            total    = len(G.player_order)
+
+        socketio.emit('guess_submitted', {'username': username, 'count': count, 'total': total}, room=GAME_ROOM)
+        if all_done:
+            socketio.start_background_task(_finish_game)
+        else:
+            socketio.start_background_task(_delayed_final_turn)
 
 def _launch_final_round():
     with app.app_context():
@@ -471,6 +588,8 @@ def _resolve_game():
 def _update_stats(results):
     correct_count = sum(1 for p in results['players'] if p['both_correct'])
     for pr in results['players']:
+        if pr['username'] in G.bots:
+            continue
         profile = PlayerProfile.query.filter_by(username=pr['username']).first()
         if not profile:
             profile = PlayerProfile(username=pr['username'])
@@ -492,12 +611,16 @@ def on_play_again():
     with _lock:
         if G.phase != 'results':
             return
-        saved       = {sid: {'username': d['username'], 'ready': False}
+        saved_bots  = set(G.bots)
+        # Bots stay ready; humans reset to not-ready
+        saved       = {sid: {'username': d['username'],
+                             'ready': d['username'] in saved_bots}
                        for sid, d in G.players.items()}
         saved_order = list(G.player_order)
         G.reset()
         G.players      = saved
         G.player_order = saved_order
+        G.bots         = saved_bots
     socketio.emit('return_to_lobby', {'players': G.players_list()}, room=GAME_ROOM)
 
 # ─── Entry Point ──────────────────────────────────────────────────────────────

@@ -41,8 +41,25 @@
   ══════════════════════════════════════════════ -->
   <div id="s-lobby" class="screen">
     <h2 class="screen-title">Game Lobby</h2>
+
+    <!-- Shuffling card animation -->
+    <div class="shuffle-deck">
+      <div class="shuffle-card"></div>
+      <div class="shuffle-card"></div>
+      <div class="shuffle-card"></div>
+    </div>
+
+    <!-- Prominent player counter -->
     <div id="player-count" class="player-count"></div>
+
+    <!-- Player list -->
     <div id="player-list" class="player-list"></div>
+
+    <!-- Bot controls -->
+    <div class="bot-controls">
+      <button id="add-bot-btn" class="btn btn-bot">+ Add Bot</button>
+      <button id="remove-bots-btn" class="btn btn-bot-remove hidden">Remove Bots</button>
+    </div>
 
     <div class="section-label">Choose a suit for this round:</div>
     <div class="suit-grid">

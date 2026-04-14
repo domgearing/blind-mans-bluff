@@ -70,7 +70,9 @@ socket.on('joined', (data) => {
 socket.on('player_joined', (data) => {
   S.players = data.players;
   renderLobbyPlayers();
-  showToast(`${data.username} joined.`, 'info');
+  if (data.username) {
+    showToast(data.is_bot ? `${data.username} (bot) added.` : `${data.username} joined.`, 'info');
+  }
 });
 
 socket.on('player_left', (data) => {
@@ -83,6 +85,12 @@ socket.on('player_readied', (data) => {
   S.players = data.players;
   renderLobbyPlayers();
   updateLobbyStatus();
+});
+
+socket.on('bots_removed', (data) => {
+  S.players = data.players;
+  renderLobbyPlayers();
+  showToast('Bots removed.', 'info');
 });
 
 socket.on('suit_selected', (data) => {
@@ -423,15 +431,29 @@ function renderLobbyPlayers() {
   list.innerHTML = S.players.map(p => `
     <div class="player-row ${p.username === S.username ? 'me' : ''}">
       <span class="player-name">
-        ${p.username}${p.username === S.username ? ' <em style="opacity:.5;font-style:normal">(you)</em>' : ''}
+        ${p.username}${p.is_bot ? '<span class="bot-badge">BOT</span>' : ''}${p.username === S.username ? ' <em style="opacity:.5;font-style:normal">(you)</em>' : ''}
       </span>
       <span class="ready-badge ${p.ready ? 'ready' : 'not-ready'}">
         ${p.ready ? '✓' : '○'}
       </span>
     </div>
   `).join('');
-  document.getElementById('player-count').textContent =
-    `${S.players.length} / 5 players connected`;
+
+  const n    = S.players.length;
+  const need = 5 - n;
+  const countEl = document.getElementById('player-count');
+  countEl.innerHTML = `<span class="count-num">${n}</span> / 5 players${need > 0 ? ` — need ${need} more` : ' — lobby full!'}`;
+  countEl.classList.toggle('count-full', n === 5);
+
+  // Show/hide remove-bots button based on whether any bots are present
+  const hasBots = S.players.some(p => p.is_bot);
+  const removeBotBtn = document.getElementById('remove-bots-btn');
+  if (removeBotBtn) removeBotBtn.classList.toggle('hidden', !hasBots);
+
+  // Disable add-bot button when lobby is full
+  const addBotBtn = document.getElementById('add-bot-btn');
+  if (addBotBtn) addBotBtn.disabled = (n >= 5);
+
   updateLobbyStatus();
 }
 
@@ -877,6 +899,14 @@ document.addEventListener('DOMContentLoaded', () => {
     rb.classList.add('ready-done');
     rb.disabled = true;
     rb.textContent = 'Ready ✓';
+  });
+
+  // ── Lobby: bot controls ───────────────────────────────────────────────────
+  document.getElementById('add-bot-btn').addEventListener('click', () => {
+    socket.emit('add_bot');
+  });
+  document.getElementById('remove-bots-btn').addEventListener('click', () => {
+    socket.emit('remove_bots');
   });
 
   // ── Lobby: iOS motion permission ──────────────────────────────────────────
