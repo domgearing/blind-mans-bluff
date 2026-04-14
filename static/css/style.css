@@ -484,6 +484,21 @@ input[type="text"]::placeholder { color: var(--text2); }
   justify-content: center;
 }
 
+/* ─── Face card image ────────────────────────────────────────────────────── */
+.face-img {
+  width: 78%;
+  height: 78%;
+  object-fit: contain;
+  border-radius: 4px;
+  display: block;
+}
+.face-svg-fallback {
+  width: 78%;
+  height: 78%;
+  align-items: center;
+  justify-content: center;
+}
+
 /* ─── Pip layout ──────────────────────────────────────────────────────────── */
 .pip-area {
   position: relative;

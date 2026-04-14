@@ -574,7 +574,14 @@ function renderGameCard(data) {
     ).join('');
     center.innerHTML = `<div class="pip-area">${pips}</div>`;
   } else {
-    center.innerHTML = buildFaceCardSVG(val, sym, isRed);
+    // Face card — use real card image, fall back to SVG portrait
+    const suitCode = { Hearts: 'H', Diamonds: 'D', Clubs: 'C', Spades: 'S' }[data.suit] || 'H';
+    const imgSrc   = `/static/cards/${val}${suitCode}.png`;
+    center.innerHTML = `
+      <img class="face-img" src="${imgSrc}"
+           onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"
+           alt="${val}">
+      <div class="face-svg-fallback" style="display:none">${buildFaceCardSVG(val, sym, isRed)}</div>`;
   }
 }
 
