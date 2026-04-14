@@ -5,7 +5,8 @@
       "Bash(python -c ':*)",
       "Bash(python3 -c \"import flask; print\\('flask ok'\\)\")",
       "Bash(pip3 install:*)",
-      "Bash(python3 -c \"import app; print\\('OK'\\)\")"
+      "Bash(python3 -c \"import app; print\\('OK'\\)\")",
+      "Bash(python3 -c \"import app; print\\('startup OK'\\)\")"
     ]
   }
 }
