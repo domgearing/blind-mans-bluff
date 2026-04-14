@@ -366,17 +366,24 @@ function onDeviceMotion(e) {
   const rr = e.rotationRate;
   if (!rr || rr.alpha === null) return;
 
-  // Only track gamma (rotation around Y-axis = phone tilting left↔right)
-  // Alpha/beta movements (head turns, forward tilt) are ignored.
-  const gamma     = Math.abs(rr.gamma || 0);
-  const totalMove = Math.sqrt(
-    Math.pow(rr.alpha || 0, 2) +
-    Math.pow(rr.beta  || 0, 2) +
-    Math.pow(rr.gamma || 0, 2)
-  );
+  const alpha = rr.alpha || 0;  // spin around Z-axis (perpendicular to screen)
+  const beta  = rr.beta  || 0;  // forward/back tilt
+  const gamma = rr.gamma || 0;  // left/right tilt
 
-  const STABLE_THRESHOLD = 25;  // °/s total — phone is considered still
-  const TILT_THRESHOLD   = 110; // °/s gamma only — deliberate left↔right tilt
+  // Total movement for stability check
+  const totalMove = Math.sqrt(alpha * alpha + beta * beta + gamma * gamma);
+
+  // "Head movement" axes — if these are high while alpha is high,
+  // it's a head turn/nod, not a deliberate phone flick
+  const headAxes = Math.sqrt(beta * beta + gamma * gamma);
+
+  // A deliberate CCW wrist flick spins mostly on alpha (Z-axis) with
+  // very little beta/gamma. Head turns produce significant beta/gamma
+  // even when alpha is also moving.
+  const STABLE_THRESHOLD  = 25;   // °/s total — phone genuinely still
+  const SPIN_THRESHOLD    = 140;  // °/s alpha — fast deliberate spin
+  const HEAD_AXIS_MAX     = 50;   // °/s — max allowed beta/gamma during spin
+                                   //  (head turns always exceed this)
 
   if (totalMove < STABLE_THRESHOLD) {
     if (!mot.stableTimer) {
@@ -390,7 +397,9 @@ function onDeviceMotion(e) {
     clearTimeout(mot.stableTimer);
     mot.stableTimer = null;
 
-    if (gamma >= TILT_THRESHOLD && mot.wasStable) {
+    const isPureFlick = Math.abs(alpha) >= SPIN_THRESHOLD && headAxes < HEAD_AXIS_MAX;
+
+    if (isPureFlick && mot.wasStable) {
       mot.wasStable = false;
       mot.cooldown  = true;
       const cooldownMs = S.isFinalRound ? 1800 : 2500;
@@ -402,7 +411,7 @@ function onDeviceMotion(e) {
       } else {
         socket.emit('turn_complete');
       }
-    } else if (gamma >= TILT_THRESHOLD && !mot.wasStable) {
+    } else if (Math.abs(alpha) >= SPIN_THRESHOLD && !mot.wasStable) {
       setMotionStatus('Hold still first…');
     }
   }
