@@ -366,16 +366,19 @@ function onDeviceMotion(e) {
   const rr = e.rotationRate;
   if (!rr || rr.alpha === null) return;
 
-  const speed = Math.sqrt(
+  // Only track gamma (rotation around Y-axis = phone tilting left↔right)
+  // Alpha/beta movements (head turns, forward tilt) are ignored.
+  const gamma     = Math.abs(rr.gamma || 0);
+  const totalMove = Math.sqrt(
     Math.pow(rr.alpha || 0, 2) +
     Math.pow(rr.beta  || 0, 2) +
     Math.pow(rr.gamma || 0, 2)
   );
 
-  const STABLE_THRESHOLD = 25;  // °/s — considered still
-  const TILT_THRESHOLD   = 110; // °/s — deliberate tilt
+  const STABLE_THRESHOLD = 25;  // °/s total — phone is considered still
+  const TILT_THRESHOLD   = 110; // °/s gamma only — deliberate left↔right tilt
 
-  if (speed < STABLE_THRESHOLD) {
+  if (totalMove < STABLE_THRESHOLD) {
     if (!mot.stableTimer) {
       mot.stableTimer = setTimeout(() => {
         mot.wasStable = true;
@@ -387,7 +390,7 @@ function onDeviceMotion(e) {
     clearTimeout(mot.stableTimer);
     mot.stableTimer = null;
 
-    if (speed >= TILT_THRESHOLD && mot.wasStable) {
+    if (gamma >= TILT_THRESHOLD && mot.wasStable) {
       mot.wasStable = false;
       mot.cooldown  = true;
       const cooldownMs = S.isFinalRound ? 1800 : 2500;
@@ -399,8 +402,7 @@ function onDeviceMotion(e) {
       } else {
         socket.emit('turn_complete');
       }
-    } else if (speed >= TILT_THRESHOLD && !mot.wasStable) {
-      // Tilt before stable — give feedback so user knows to hold still first
+    } else if (gamma >= TILT_THRESHOLD && !mot.wasStable) {
       setMotionStatus('Hold still first…');
     }
   }
