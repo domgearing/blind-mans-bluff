@@ -186,6 +186,60 @@ input[type="text"]::placeholder { color: var(--text2); }
 
 .hidden { display: none !important; }
 
+/* ─── How to Play ─────────────────────────────────────────────────────────── */
+.how-to-play {
+  width: 100%;
+  max-width: 360px;
+}
+.htp-toggle {
+  width: 100%;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text2);
+  font-size: 0.88rem;
+  font-weight: 600;
+  padding: 10px 16px;
+  cursor: pointer;
+  text-align: left;
+  letter-spacing: 0.3px;
+  transition: border-color 0.15s, color 0.15s;
+}
+.htp-toggle:hover { border-color: var(--accent); color: var(--accent); }
+.htp-toggle.open  { border-color: var(--accent); color: var(--accent); border-radius: 10px 10px 0 0; border-bottom: none; }
+.htp-body {
+  border: 1px solid var(--accent);
+  border-top: none;
+  border-radius: 0 0 10px 10px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.htp-step {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  font-size: 0.85rem;
+  color: var(--text2);
+  line-height: 1.5;
+}
+.htp-num {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #000;
+  font-size: 0.75rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 1px;
+}
+.htp-step strong { color: var(--text); }
+
 /* ─── Lobby Screen ────────────────────────────────────────────────────────── */
 .screen-title {
   font-size: 1.4rem;

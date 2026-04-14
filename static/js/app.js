@@ -1096,6 +1096,15 @@ function showStats(stats) {
 
 document.addEventListener('DOMContentLoaded', () => {
 
+  // ── How to Play toggle ────────────────────────────────────────────────────
+  const htpToggle = document.getElementById('htp-toggle');
+  const htpBody   = document.getElementById('htp-body');
+  htpToggle.addEventListener('click', () => {
+    const open = htpBody.classList.toggle('hidden') === false;
+    htpToggle.textContent = open ? 'How to Play ▾' : 'How to Play ▸';
+    htpToggle.classList.toggle('open', open);
+  });
+
   // ── Login ──────────────────────────────────────────────────────────────────
   const loginBtn = document.getElementById('login-btn');
   const usernameInput = document.getElementById('username-input');
