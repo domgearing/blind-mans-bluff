@@ -577,58 +577,56 @@ input[type="text"]::placeholder { color: var(--text2); }
   text-transform: uppercase;
 }
 
-/* ─── Final Round Overlay (on game screen) ────────────────────────────────── */
+/* ─── Final Round Overlay — full-screen tap button ────────────────────────── */
 .final-round-overlay {
   position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  background: rgba(10, 10, 20, 0.94);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  border-top: 2px solid var(--error);
-  padding: 14px 20px 30px;
+  inset: 0;
+  z-index: 50;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
-  z-index: 20;
+  justify-content: center;
+  gap: 20px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  /* waiting-to-record: green */
+  background: rgba(6, 24, 6, 0.90);
+  border: 4px solid var(--success);
+  transition: background 0.2s, border-color 0.2s;
 }
 .final-round-overlay.recording {
-  border-top-color: var(--success);
-  animation: pulse-border 1.2s ease-in-out infinite;
+  background: rgba(28, 6, 6, 0.90);
+  border-color: var(--error);
+  animation: fro-pulse 1s ease-in-out infinite;
 }
-@keyframes pulse-border {
-  0%, 100% { border-top-color: var(--success); }
-  50%       { border-top-color: rgba(63,185,80,0.3); }
+@keyframes fro-pulse {
+  0%, 100% { border-color: var(--error); }
+  50%       { border-color: rgba(248,81,73,0.3); }
 }
-.fro-status {
-  font-size: 1rem;
-  font-weight: 700;
+.final-round-overlay.fro-failed {
+  background: rgba(28, 16, 0, 0.90);
+  border-color: var(--warning);
+}
+.fro-icon {
+  font-size: min(18vw, 72px);
+  line-height: 1;
+  pointer-events: none;
+}
+.fro-main {
+  font-size: min(8vw, 2.4rem);
+  font-weight: 900;
   color: var(--text);
   text-align: center;
+  letter-spacing: 1px;
+  pointer-events: none;
 }
-.fro-transcript {
-  font-size: 0.82rem;
+.fro-hint {
+  font-size: min(4vw, 1rem);
   color: var(--text2);
-  font-style: italic;
   text-align: center;
-  min-height: 18px;
-}
-.fro-parsed {
-  font-size: 0.95rem;
-  color: var(--accent);
-  font-weight: 600;
-  text-align: center;
-  min-height: 20px;
-}
-
-.btn-flash {
-  animation: btn-pulse 0.3s ease-in-out 2;
-}
-@keyframes btn-pulse {
-  0%, 100% { transform: scale(1); }
-  50%       { transform: scale(1.12); box-shadow: 0 0 12px var(--accent); }
+  max-width: 280px;
+  line-height: 1.4;
+  pointer-events: none;
 }
 
 /* ─── Your Turn Banner ────────────────────────────────────────────────────── */

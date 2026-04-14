@@ -204,10 +204,11 @@ socket.on('prompt_final_guess', () => {
 socket.on('guess_submitted', (data) => {
   const prog = document.getElementById('guess-progress');
   if (prog) prog.textContent = `${data.count} / ${data.total} guesses in`;
-  // Update overlay status line with progress count
-  const statusEl = document.getElementById('fro-status');
-  if (statusEl && !S.myTurn) {
-    statusEl.textContent = `${data.count} / ${data.total} guesses in — waiting for ${S.currentPlayer}…`;
+  // Update hint text when watching others guess
+  if (!S.myTurn) {
+    const hintEl = document.getElementById('fro-hint');
+    if (hintEl) hintEl.textContent =
+      `${data.count} / ${data.total} guesses in — waiting for ${S.currentPlayer}…`;
   }
 });
 
@@ -410,9 +411,8 @@ function onDeviceMotion(e) {
       setTimeout(() => { mot.cooldown = false; }, cooldownMs);
       setMotionStatus('Motion: fired');
 
-      if (S.isFinalRound) {
-        handleFinalRoundTilt();
-      } else {
+      // Final round uses tap buttons only — tilt only ends regular turns
+      if (!S.isFinalRound) {
         socket.emit('turn_complete');
       }
     } else if (Math.abs(alpha) >= SPIN_THRESHOLD && !mot.wasStable) {
@@ -430,7 +430,7 @@ function setMotionStatus(msg) {
 //  DING SOUND
 // ─────────────────────────────────────────────────────────────────────────────
 
-function playDing() {
+function _playTone(freqStart, freqEnd, duration, volume) {
   try {
     const AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return;
@@ -440,18 +440,40 @@ function playDing() {
     osc.connect(gain);
     gain.connect(ctx.destination);
     osc.type = 'sine';
-    osc.frequency.setValueAtTime(1046, ctx.currentTime);        // C6
-    osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.15); // A5
+    osc.frequency.setValueAtTime(freqStart, ctx.currentTime);
+    if (freqEnd !== freqStart)
+      osc.frequency.exponentialRampToValueAtTime(freqEnd, ctx.currentTime + duration * 0.6);
+    gain.gain.setValueAtTime(volume, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + duration);
+  } catch (_) {}
+}
+// Your-turn announcement: C6 → A5 → C6 (warm, inviting)
+function playDing() {
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    const ctx = new AC();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(1046, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(880,  ctx.currentTime + 0.15);
     osc.frequency.exponentialRampToValueAtTime(1046, ctx.currentTime + 0.35);
     gain.gain.setValueAtTime(0.55, ctx.currentTime);
     gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.7);
-    osc.start(ctx.currentTime);
-    osc.stop(ctx.currentTime + 0.7);
+    osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.7);
   } catch (_) {}
 }
+// Recording-start: rising short beep
+function playBeepUp()   { _playTone(700, 1100, 0.25, 0.5); }
+// Recording-stop / submit: falling short beep
+function playBeepDown() { _playTone(1100, 600, 0.3, 0.45); }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  FINAL ROUND — tilt-to-record logic
+//  FINAL ROUND — full-screen tap-button recording
 // ─────────────────────────────────────────────────────────────────────────────
 
 function startFinalRoundTurn() {
@@ -460,45 +482,35 @@ function startFinalRoundTurn() {
   finalVoice.position    = null;
   finalVoice.cardNum     = null;
   finalVoice.transcript  = '';
+  // Alert the player it's their turn even if looking away
   playDing();
   vibrateGreen();
   updateFinalOverlay('waiting');
 }
 
-function handleFinalRoundTilt() {
+function _tapOverlay() {
   if (!S.myTurn || !S.isFinalRound) return;
 
   if (!finalVoice.recording) {
-    // Tilt while not yet recording — start voice capture
+    // First tap — start recording
     finalVoice.recording   = true;
     finalVoice.submitOnEnd = false;
     finalVoice.transcript  = '';
     finalVoice.position    = null;
     finalVoice.cardNum     = null;
-    updateFinalOverlay('recording');
+    playBeepUp();
     vibrateShort();
-    if (speechRec) {
-      try { speechRec.start(); } catch (_) {
-        // Fallback: if start fails (e.g. permission not armed), flash the tap button
-        finalVoice.recording = false;
-        updateFinalOverlay('waiting');
-        const btn = document.getElementById('fro-manual-start');
-        if (btn) {
-          btn.classList.add('btn-flash');
-          setTimeout(() => btn.classList.remove('btn-flash'), 600);
-        }
-      }
-    }
+    updateFinalOverlay('recording');
+    if (speechRec) { try { speechRec.start(); } catch (_) {} }
   } else {
-    // Tilt while recording — stop and submit
-    finalVoice.recording    = false;
-    finalVoice.submitOnEnd  = true;
+    // Second tap — stop and submit
+    finalVoice.recording   = false;
+    finalVoice.submitOnEnd = true;
+    playBeepDown();
+    vibrateShort();
     updateFinalOverlay('submitting');
-    if (speechRec) {
-      try { speechRec.stop(); } catch (_) {}
-    }
-    // onend will call submitFinalGuess() once all results have arrived
-    // 1.5s safety net in case onend never fires
+    if (speechRec) { try { speechRec.stop(); } catch (_) {} }
+    // 1.5 s safety net if onend never fires
     setTimeout(() => {
       if (finalVoice.submitOnEnd) {
         finalVoice.submitOnEnd = false;
@@ -526,43 +538,40 @@ function submitFinalGuess() {
 }
 
 function updateFinalOverlay(state) {
-  const overlay    = document.getElementById('final-round-overlay');
-  const statusEl   = document.getElementById('fro-status');
-  const transEl    = document.getElementById('fro-transcript');
-  const parsedEl   = document.getElementById('fro-parsed');
-  const manualStart = document.getElementById('fro-manual-start');
-  const manualStop  = document.getElementById('fro-manual-stop');
+  const overlay = document.getElementById('final-round-overlay');
+  const iconEl  = document.getElementById('fro-icon');
+  const mainEl  = document.getElementById('fro-main');
+  const hintEl  = document.getElementById('fro-hint');
   if (!overlay) return;
 
-  overlay.classList.remove('hidden');  // ensure visible whenever called
-  overlay.classList.remove('recording');
-  syncCardAreaOffset();
-  manualStart.classList.add('hidden');
-  manualStop.classList.add('hidden');
+  overlay.classList.remove('recording', 'fro-failed');
+
+  if (state === 'watching' || state === 'submitted') {
+    // Hide entirely — turn indicator at top handles watching; submitted hides briefly
+    overlay.classList.add('hidden');
+    return;
+  }
+
+  overlay.classList.remove('hidden');
 
   if (state === 'waiting') {
-    statusEl.textContent  = 'YOUR TURN — Tilt to start speaking, tilt again to submit';
-    transEl.textContent   = '';
-    parsedEl.textContent  = '';
-    manualStart.classList.remove('hidden');
+    iconEl.textContent = '🎤';
+    mainEl.textContent = 'TAP TO SPEAK';
+    hintEl.textContent = 'Speak your guess, then tap again to submit';
   } else if (state === 'recording') {
-    statusEl.textContent = 'Recording… Tilt again to submit';
+    iconEl.textContent = '⏹';
+    mainEl.textContent = 'RECORDING…';
+    hintEl.textContent = 'Tap anywhere to stop and submit';
     overlay.classList.add('recording');
-    manualStop.classList.remove('hidden');
   } else if (state === 'submitting') {
-    statusEl.textContent = 'Locking in guess…';
-  } else if (state === 'submitted') {
-    statusEl.textContent = '✓ Guess locked in!';
-    transEl.textContent  = '';
-    parsedEl.textContent = '';
+    iconEl.textContent = '⏳';
+    mainEl.textContent = 'SUBMITTING…';
+    hintEl.textContent = '';
   } else if (state === 'failed') {
-    statusEl.textContent  = "Couldn't parse guess — tilt to try again";
-    parsedEl.textContent  = 'Say e.g. "second lowest, seven"';
-    manualStart.classList.remove('hidden');
-  } else if (state === 'watching') {
-    statusEl.textContent  = `Waiting for ${S.currentPlayer}…`;
-    transEl.textContent   = '';
-    parsedEl.textContent  = '';
+    iconEl.textContent = '🔄';
+    mainEl.textContent = 'COULDN\'T PARSE';
+    hintEl.textContent = 'Say e.g. "second lowest, seven" — tap to try again';
+    overlay.classList.add('fro-failed');
   }
 }
 
@@ -780,16 +789,14 @@ function resetLobby() {
 //  TURN INDICATOR & BANNER
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Toggle .overlay-active on card-area based on whether any bottom panel is visible */
+/** Toggle .overlay-active on card-area when the your-turn-banner (bottom bar) is visible.
+ *  The final-round-overlay is now full-screen so no shift is needed for it. */
 function syncCardAreaOffset() {
   const banner  = document.getElementById('your-turn-banner');
-  const overlay = document.getElementById('final-round-overlay');
   const cardArea = document.getElementById('card-area');
   if (!cardArea) return;
-  const hasOverlay =
-    (banner  && !banner.classList.contains('hidden')) ||
-    (overlay && !overlay.classList.contains('hidden'));
-  cardArea.classList.toggle('overlay-active', hasOverlay);
+  const hasBottomBar = banner && !banner.classList.contains('hidden');
+  cardArea.classList.toggle('overlay-active', hasBottomBar);
 }
 
 function updateTurnIndicator(data) {
@@ -890,19 +897,12 @@ function setupSpeech() {
     const text = final || interim;
 
     if (S.isFinalRound) {
-      // Update the final-round overlay with live transcript
-      const transEl  = document.getElementById('fro-transcript');
-      const parsedEl = document.getElementById('fro-parsed');
-      if (transEl) transEl.textContent = text ? `"${text}"` : '';
+      // Parse the spoken guess silently (no transcript display — phone is on forehead)
       if (final) {
         const parsed = parseGuess(final);
         finalVoice.transcript = final;
         if (parsed.position   !== null) finalVoice.position = parsed.position;
         if (parsed.cardNumeric !== null) finalVoice.cardNum  = parsed.cardNumeric;
-        let parts = [];
-        if (finalVoice.position !== null) parts.push(POSITION_NAMES[finalVoice.position]);
-        if (finalVoice.cardNum  !== null) parts.push(CARD_VALUES[finalVoice.cardNum - 1]);
-        if (parsedEl) parsedEl.textContent = parts.length ? parts.join(' · ') : '(nothing parsed)';
       }
     } else {
       document.getElementById('transcript').textContent = text ? `"${text}"` : '';
@@ -1279,28 +1279,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // ── Final round: manual start/stop recording (tilt fallback) ─────────────
-  document.getElementById('fro-manual-start').addEventListener('click', () => {
-    if (!S.myTurn || !S.isFinalRound || finalVoice.recording) return;
-    finalVoice.recording   = true;
-    finalVoice.submitOnEnd = false;
-    finalVoice.transcript  = '';
-    finalVoice.position    = null;
-    finalVoice.cardNum     = null;
-    updateFinalOverlay('recording');
-    // Called from a tap — user gesture — mic permission always works here
-    if (speechRec) { try { speechRec.start(); } catch (_) {} }
-  });
-  document.getElementById('fro-manual-stop').addEventListener('click', () => {
-    if (!S.myTurn || !S.isFinalRound || !finalVoice.recording) return;
-    finalVoice.recording   = false;
-    finalVoice.submitOnEnd = true;
-    updateFinalOverlay('submitting');
-    if (speechRec) { try { speechRec.stop(); } catch (_) {} }
-    setTimeout(() => {
-      if (finalVoice.submitOnEnd) { finalVoice.submitOnEnd = false; submitFinalGuess(); }
-    }, 1500);
-  });
+  // ── Final round: tap the full-screen overlay to start/stop recording ────────
+  document.getElementById('final-round-overlay').addEventListener('click', _tapOverlay);
 
   // ── Final guess: position buttons ─────────────────────────────────────────
   document.querySelectorAll('.pos-btn').forEach(btn => {
