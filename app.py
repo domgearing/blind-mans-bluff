@@ -234,6 +234,10 @@ def on_ready():
             return emit('error', {'msg': 'Please select a suit first.'})
         G.players[request.sid]['ready'] = True
         username  = G.players[request.sid]['username']
+        # Defensive: ensure all bots are still marked ready (guards against any reset edge-case)
+        for player in G.players.values():
+            if player['username'] in G.bots:
+                player['ready'] = True
         start_now = G.all_ready
     socketio.emit('player_readied', {
         'username': username,
@@ -627,7 +631,15 @@ def on_play_again():
         for player in G.players.values():
             if player['username'] in G.bots:
                 player['ready'] = True
-    socketio.emit('return_to_lobby', {'players': G.players_list()}, room=GAME_ROOM)
+        bot_names = list(G.bots)
+        players_snapshot = G.players_list()
+    socketio.emit('return_to_lobby', {'players': players_snapshot}, room=GAME_ROOM)
+    # Explicitly emit player_readied for each bot so all clients show them as ready
+    for bot_name in bot_names:
+        socketio.emit('player_readied', {
+            'username': bot_name,
+            'players':  G.players_list(),
+        }, room=GAME_ROOM)
 
 # ─── Entry Point ──────────────────────────────────────────────────────────────
 

@@ -42,6 +42,9 @@ const finalVoice = {
   transcript:  '',
 };
 
+// Whether the user has pre-armed mic permission via the lobby button
+let micArmed = false;
+
 // ─── Socket ─────────────────────────────────────────────────────────────────
 const socket = io();
 
@@ -466,13 +469,25 @@ function handleFinalRoundTilt() {
   if (!S.myTurn || !S.isFinalRound) return;
 
   if (!finalVoice.recording) {
-    // Tilt while not yet recording — just nudge the user to tap the mic button
+    // Tilt while not yet recording — start voice capture
+    finalVoice.recording   = true;
+    finalVoice.submitOnEnd = false;
+    finalVoice.transcript  = '';
+    finalVoice.position    = null;
+    finalVoice.cardNum     = null;
+    updateFinalOverlay('recording');
     vibrateShort();
-    // Flash the tap-to-speak button so they know what to do
-    const btn = document.getElementById('fro-manual-start');
-    if (btn) {
-      btn.classList.add('btn-flash');
-      setTimeout(() => btn.classList.remove('btn-flash'), 600);
+    if (speechRec) {
+      try { speechRec.start(); } catch (_) {
+        // Fallback: if start fails (e.g. permission not armed), flash the tap button
+        finalVoice.recording = false;
+        updateFinalOverlay('waiting');
+        const btn = document.getElementById('fro-manual-start');
+        if (btn) {
+          btn.classList.add('btn-flash');
+          setTimeout(() => btn.classList.remove('btn-flash'), 600);
+        }
+      }
     }
   } else {
     // Tilt while recording — stop and submit
@@ -524,7 +539,7 @@ function updateFinalOverlay(state) {
   manualStop.classList.add('hidden');
 
   if (state === 'waiting') {
-    statusEl.textContent  = 'YOUR TURN — Tap the button to speak, then tilt to submit';
+    statusEl.textContent  = 'YOUR TURN — Tilt to start speaking, tilt again to submit';
     transEl.textContent   = '';
     parsedEl.textContent  = '';
     manualStart.classList.remove('hidden');
@@ -1200,6 +1215,36 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   document.getElementById('remove-bots-btn').addEventListener('click', () => {
     socket.emit('remove_bots');
+  });
+
+  // ── Lobby: iOS microphone permission ─────────────────────────────────────
+  const micPermBtn = document.getElementById('mic-perm-btn');
+  // Show only when SpeechRecognition exists (skip Android/desktop where it auto-prompts)
+  // On iOS Safari, calling .start() from a non-gesture context fails silently.
+  // A single user-gesture start+stop grants permission for the rest of the session.
+  const _SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (_SR && typeof DeviceMotionEvent !== 'undefined' &&
+      typeof DeviceMotionEvent.requestPermission === 'function') {
+    // iOS: show both permission buttons
+    micPermBtn.classList.remove('hidden');
+  }
+  micPermBtn.addEventListener('click', async () => {
+    if (!speechRec) {
+      showToast('Voice recognition not available on this browser.', 'warning');
+      return;
+    }
+    try {
+      // Arm mic permission: start immediately then stop — this is the user gesture
+      // that grants iOS permission for subsequent programmatic calls.
+      speechRec.start();
+      setTimeout(() => { try { speechRec.stop(); } catch (_) {} }, 200);
+      micArmed = true;
+      micPermBtn.textContent = 'Microphone Enabled ✓';
+      micPermBtn.disabled = true;
+      showToast('Microphone ready!', 'success');
+    } catch (e) {
+      showToast('Could not access microphone.', 'error');
+    }
   });
 
   // ── Lobby: iOS motion permission ──────────────────────────────────────────
