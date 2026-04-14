@@ -618,6 +618,14 @@ input[type="text"]::placeholder { color: var(--text2); }
   min-height: 20px;
 }
 
+.btn-flash {
+  animation: btn-pulse 0.3s ease-in-out 2;
+}
+@keyframes btn-pulse {
+  0%, 100% { transform: scale(1); }
+  50%       { transform: scale(1.12); box-shadow: 0 0 12px var(--accent); }
+}
+
 /* ─── Your Turn Banner ────────────────────────────────────────────────────── */
 .your-turn-banner {
   position: fixed;

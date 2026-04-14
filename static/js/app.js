@@ -35,10 +35,11 @@ const mot = {
 
 // Final-round voice state
 const finalVoice = {
-  recording:  false,
-  position:   null,
-  cardNum:    null,
-  transcript: '',
+  recording:   false,
+  submitOnEnd: false,  // submit when speechRec fires onend
+  position:    null,
+  cardNum:     null,
+  transcript:  '',
 };
 
 // ─── Socket ─────────────────────────────────────────────────────────────────
@@ -451,10 +452,11 @@ function playDing() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function startFinalRoundTurn() {
-  finalVoice.recording  = false;
-  finalVoice.position   = null;
-  finalVoice.cardNum    = null;
-  finalVoice.transcript = '';
+  finalVoice.recording   = false;
+  finalVoice.submitOnEnd = false;
+  finalVoice.position    = null;
+  finalVoice.cardNum     = null;
+  finalVoice.transcript  = '';
   playDing();
   vibrateGreen();
   updateFinalOverlay('waiting');
@@ -464,24 +466,30 @@ function handleFinalRoundTilt() {
   if (!S.myTurn || !S.isFinalRound) return;
 
   if (!finalVoice.recording) {
-    // Tilt 1 — start recording
-    finalVoice.recording  = true;
-    finalVoice.transcript = '';
-    finalVoice.position   = null;
-    finalVoice.cardNum    = null;
-    updateFinalOverlay('recording');
+    // Tilt while not yet recording — just nudge the user to tap the mic button
     vibrateShort();
-    if (speechRec) {
-      try { speechRec.start(); } catch (_) {}
+    // Flash the tap-to-speak button so they know what to do
+    const btn = document.getElementById('fro-manual-start');
+    if (btn) {
+      btn.classList.add('btn-flash');
+      setTimeout(() => btn.classList.remove('btn-flash'), 600);
     }
   } else {
-    // Tilt 2 — stop recording and submit
-    finalVoice.recording = false;
+    // Tilt while recording — stop and submit
+    finalVoice.recording    = false;
+    finalVoice.submitOnEnd  = true;
     updateFinalOverlay('submitting');
     if (speechRec) {
       try { speechRec.stop(); } catch (_) {}
     }
-    setTimeout(() => submitFinalGuess(), 600);
+    // onend will call submitFinalGuess() once all results have arrived
+    // 1.5s safety net in case onend never fires
+    setTimeout(() => {
+      if (finalVoice.submitOnEnd) {
+        finalVoice.submitOnEnd = false;
+        submitFinalGuess();
+      }
+    }, 1500);
   }
 }
 
@@ -516,7 +524,7 @@ function updateFinalOverlay(state) {
   manualStop.classList.add('hidden');
 
   if (state === 'waiting') {
-    statusEl.textContent  = 'YOUR TURN — Tilt to start speaking';
+    statusEl.textContent  = 'YOUR TURN — Tap the button to speak, then tilt to submit';
     transEl.textContent   = '';
     parsedEl.textContent  = '';
     manualStart.classList.remove('hidden');
@@ -877,6 +885,12 @@ function setupSpeech() {
   speechRec.onend = () => {
     const btn = document.getElementById('mic-btn');
     if (btn) { btn.classList.remove('recording'); btn.textContent = '🎤 Speak Your Guess'; }
+
+    // Final-round: submit once all results have arrived
+    if (S.isFinalRound && finalVoice.submitOnEnd) {
+      finalVoice.submitOnEnd = false;
+      submitFinalGuess();
+    }
   };
 
   speechRec.onerror = () => {
@@ -1206,22 +1220,25 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // ── Final round: manual start/stop recording (tilt fallback) ─────────────
   document.getElementById('fro-manual-start').addEventListener('click', () => {
-    if (S.myTurn && S.isFinalRound && !finalVoice.recording) {
-      finalVoice.recording  = true;
-      finalVoice.transcript = '';
-      finalVoice.position   = null;
-      finalVoice.cardNum    = null;
-      updateFinalOverlay('recording');
-      if (speechRec) { try { speechRec.start(); } catch (_) {} }
-    }
+    if (!S.myTurn || !S.isFinalRound || finalVoice.recording) return;
+    finalVoice.recording   = true;
+    finalVoice.submitOnEnd = false;
+    finalVoice.transcript  = '';
+    finalVoice.position    = null;
+    finalVoice.cardNum     = null;
+    updateFinalOverlay('recording');
+    // Called from a tap — user gesture — mic permission always works here
+    if (speechRec) { try { speechRec.start(); } catch (_) {} }
   });
   document.getElementById('fro-manual-stop').addEventListener('click', () => {
-    if (S.myTurn && S.isFinalRound && finalVoice.recording) {
-      finalVoice.recording = false;
-      if (speechRec) { try { speechRec.stop(); } catch (_) {} }
-      updateFinalOverlay('submitting');
-      setTimeout(() => submitFinalGuess(), 600);
-    }
+    if (!S.myTurn || !S.isFinalRound || !finalVoice.recording) return;
+    finalVoice.recording   = false;
+    finalVoice.submitOnEnd = true;
+    updateFinalOverlay('submitting');
+    if (speechRec) { try { speechRec.stop(); } catch (_) {} }
+    setTimeout(() => {
+      if (finalVoice.submitOnEnd) { finalVoice.submitOnEnd = false; submitFinalGuess(); }
+    }, 1500);
   });
 
   // ── Final guess: position buttons ─────────────────────────────────────────
