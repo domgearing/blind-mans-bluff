@@ -372,8 +372,8 @@ function onDeviceMotion(e) {
     Math.pow(rr.gamma || 0, 2)
   );
 
-  const STABLE_THRESHOLD = 22;  // °/s — considered still
-  const TILT_THRESHOLD   = 75;  // °/s — deliberate tilt (lowered for reliability)
+  const STABLE_THRESHOLD = 25;  // °/s — considered still
+  const TILT_THRESHOLD   = 110; // °/s — deliberate tilt
 
   if (speed < STABLE_THRESHOLD) {
     if (!mot.stableTimer) {
