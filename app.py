@@ -161,6 +161,11 @@ def on_disconnect():
         was_mid_game = G.phase in ('playing', 'final_round')
         if username in G.player_order:
             G.player_order.remove(username)
+        # If no human players remain (only bots or nobody), reset to a clean lobby
+        # so the next person to join doesn't see a stale 'in progress' state.
+        human_sids = [sid for sid, p in G.players.items() if p['username'] not in G.bots]
+        if not human_sids:
+            G.reset()
 
     socketio.emit('player_left', {
         'username': username,
