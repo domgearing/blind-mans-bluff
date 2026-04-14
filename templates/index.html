@@ -106,9 +106,7 @@
           <div class="card-corner-value" id="tl-value"></div>
           <div class="card-corner-suit"  id="tl-suit"></div>
         </div>
-        <div class="card-center">
-          <div class="card-center-suit" id="center-suit"></div>
-        </div>
+        <div class="card-center" id="card-center-area"></div>
         <div class="card-corner bottom-right">
           <div class="card-corner-value" id="br-value"></div>
           <div class="card-corner-suit"  id="br-suit"></div>
@@ -116,13 +114,22 @@
       </div>
     </div>
 
-    <!-- Shown only when it's THIS player's turn -->
+    <!-- Shown only when it's THIS player's turn (playing rounds) -->
     <div id="your-turn-banner" class="your-turn-banner hidden">
       <span class="turn-label">YOUR TURN</span>
-      <span class="turn-hint">Tilt phone right-to-left when done speaking</span>
+      <span class="turn-hint">Tilt phone when done speaking</span>
       <button id="manual-done-btn" class="btn btn-secondary btn-sm">
         Done ✓ (tap if tilt fails)
       </button>
+    </div>
+
+    <!-- Final round bottom overlay (stays on game screen) -->
+    <div id="final-round-overlay" class="final-round-overlay hidden">
+      <div id="fro-status"     class="fro-status"></div>
+      <div id="fro-transcript" class="fro-transcript"></div>
+      <div id="fro-parsed"     class="fro-parsed"></div>
+      <button id="fro-manual-start" class="btn btn-secondary btn-sm hidden">Tap to record</button>
+      <button id="fro-manual-stop"  class="btn btn-secondary btn-sm hidden">Tap to submit</button>
     </div>
 
     <!-- Final-round announcement overlay (appears briefly) -->

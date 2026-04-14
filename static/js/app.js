@@ -25,11 +25,20 @@ const S = {
 
 // Motion-sensor sub-state
 const mot = {
-  enabled:     false,
-  wasStable:   false,       // phone was still for ≥800 ms
-  stableTimer: null,
-  cooldown:    false,       // block re-trigger for 3 s after a tilt
-  listening:   false,       // only process events when active
+  enabled:          false,
+  listenerAdded:    false,  // prevent adding listener twice
+  wasStable:        false,
+  stableTimer:      null,
+  cooldown:         false,
+  listening:        false,
+};
+
+// Final-round voice state
+const finalVoice = {
+  recording:  false,
+  position:   null,
+  cardNum:    null,
+  transcript: '',
 };
 
 // ─── Socket ─────────────────────────────────────────────────────────────────
@@ -134,14 +143,8 @@ socket.on('turn_started', (data) => {
   updateTurnIndicator(data);
   if (!S.myTurn) {
     hideTurnBanner();
-    // In final round, show "waiting for X" if we're already on that screen
     if (S.isFinalRound) {
-      const wl = document.getElementById('waiting-label');
-      if (wl) {
-        wl.classList.remove('hidden');
-        wl.textContent = `Waiting for ${data.player} to guess…`;
-      }
-      disableFinalGuessForm();
+      updateFinalOverlay('watching');
     }
   }
 });
@@ -149,16 +152,13 @@ socket.on('turn_started', (data) => {
 socket.on('your_turn', (data) => {
   S.myTurn = true;
   if (data.is_final) {
-    // Final round — light green, enable form
     flashScreen('green', 600);
-    vibrateGreen();
-    enableFinalGuessForm();
+    startFinalRoundTurn();
   } else {
-    // Playing round — light green, show tilt banner
     flashScreen('green', 600);
     vibrateGreen();
     showTurnBanner();
-    mot.wasStable = false; // require fresh stability before next tilt triggers
+    mot.wasStable = false;
     mot.cooldown  = false;
   }
 });
@@ -192,17 +192,19 @@ socket.on('red_buzz', () => {
 });
 
 socket.on('prompt_final_guess', () => {
-  S.guessPosition  = null;
-  S.guessCard      = null;
-  S.guessSubmitted = false;
-  resetFinalGuessForm();
-  showScreen('s-final');
-  // Current player is set via turn_started/your_turn which follows shortly
+  // Stay on game screen — show the final-round overlay at the bottom
+  document.getElementById('final-round-overlay').classList.remove('hidden');
+  updateFinalOverlay('watching');
 });
 
 socket.on('guess_submitted', (data) => {
   const prog = document.getElementById('guess-progress');
   if (prog) prog.textContent = `${data.count} / ${data.total} guesses in`;
+  // Update overlay status line with progress count
+  const statusEl = document.getElementById('fro-status');
+  if (statusEl && !S.myTurn) {
+    statusEl.textContent = `${data.count} / ${data.total} guesses in — waiting for ${S.currentPlayer}…`;
+  }
 });
 
 socket.on('guess_ack', () => {
@@ -217,6 +219,7 @@ socket.on('guess_ack', () => {
 socket.on('game_results', (results) => {
   S.results = results;
   mot.listening = false;
+  document.getElementById('final-round-overlay').classList.add('hidden');
   renderResults(results);
   showScreen('s-results');
 });
@@ -232,6 +235,7 @@ socket.on('return_to_lobby', (data) => {
   S.myCard       = null;
   S.guessSubmitted = false;
   mot.listening  = false;
+  document.getElementById('final-round-overlay').classList.add('hidden');
 
   resetLobby();
   renderLobbyPlayers();
@@ -242,6 +246,7 @@ socket.on('game_aborted', (data) => {
   mot.listening = false;
   S.isFinalRound = false;
   S.myTurn       = false;
+  document.getElementById('final-round-overlay').classList.add('hidden');
   showToast(data.reason, 'error');
   resetLobby();
   showScreen('s-lobby');
@@ -291,33 +296,36 @@ function vibrateShort() { vibrate([60]); }
  * Ask for DeviceMotion permission (required on iOS 13+) then set up listeners.
  * Called once when the card is first shown.
  */
+function _addMotionListener() {
+  if (mot.listenerAdded) return;
+  mot.listenerAdded = true;
+  mot.enabled = true;
+  window.addEventListener('devicemotion', onDeviceMotion, { passive: true });
+  setMotionStatus('Motion: active');
+}
+
 async function activateMotionMonitor() {
   mot.listening = true;
   if (typeof DeviceMotionEvent === 'undefined') {
     setMotionStatus('Motion sensor unavailable — use button');
     return;
   }
+  if (mot.enabled) return; // already set up via lobby button
   if (typeof DeviceMotionEvent.requestPermission === 'function') {
-    // iOS 13+: permission must be requested from a user gesture.
-    // We'll prompt via the lobby button; here we just check if already granted.
-    // If it wasn't requested yet, show a button overlay on game screen.
+    // iOS 13+: try checking existing permission state (non-gesture context)
     try {
       const perm = await DeviceMotionEvent.requestPermission();
       if (perm === 'granted') {
-        mot.enabled = true;
-        window.addEventListener('devicemotion', onDeviceMotion, { passive: true });
-        setMotionStatus('Motion: active');
+        _addMotionListener();
       } else {
         setMotionStatus('Motion denied — use button');
       }
     } catch (_) {
-      setMotionStatus('Motion: use button');
+      // requestPermission failed outside a user gesture — already handled by lobby button
+      setMotionStatus('Motion: tap lobby button');
     }
   } else {
-    // Android / non-iOS — permission not required
-    mot.enabled = true;
-    window.addEventListener('devicemotion', onDeviceMotion, { passive: true });
-    setMotionStatus('Motion: active');
+    _addMotionListener();
   }
 }
 
@@ -327,8 +335,7 @@ async function requestMotionPermissionExplicit() {
     try {
       const perm = await DeviceMotionEvent.requestPermission();
       if (perm === 'granted') {
-        mot.enabled = true;
-        window.addEventListener('devicemotion', onDeviceMotion, { passive: true });
+        _addMotionListener();
         showToast('Motion sensor enabled!', 'success');
         document.getElementById('motion-perm-btn').classList.add('hidden');
       } else {
@@ -338,8 +345,7 @@ async function requestMotionPermissionExplicit() {
       showToast('Could not request permission.', 'error');
     }
   } else {
-    mot.enabled = true;
-    window.addEventListener('devicemotion', onDeviceMotion, { passive: true });
+    _addMotionListener();
     showToast('Motion active!', 'success');
     document.getElementById('motion-perm-btn').classList.add('hidden');
   }
@@ -354,7 +360,7 @@ async function requestMotionPermissionExplicit() {
  *   - A 3-second cooldown prevents double-fires.
  */
 function onDeviceMotion(e) {
-  if (!mot.enabled || !mot.listening || !S.myTurn || S.isFinalRound) return;
+  if (!mot.enabled || !mot.listening || !S.myTurn) return;
   if (mot.cooldown) return;
 
   const rr = e.rotationRate;
@@ -366,30 +372,33 @@ function onDeviceMotion(e) {
     Math.pow(rr.gamma || 0, 2)
   );
 
-  const STABLE_THRESHOLD = 25;   // °/s — considered still
-  const TILT_THRESHOLD   = 120;  // °/s — fast deliberate tilt
+  const STABLE_THRESHOLD = 25;  // °/s — considered still
+  const TILT_THRESHOLD   = 100; // °/s — fast deliberate tilt
 
   if (speed < STABLE_THRESHOLD) {
-    // Phone is still — start/continue stability timer
     if (!mot.stableTimer) {
       mot.stableTimer = setTimeout(() => {
         mot.wasStable = true;
         mot.stableTimer = null;
-      }, 800);
+      }, 600);
     }
   } else {
-    // Phone is moving
     clearTimeout(mot.stableTimer);
     mot.stableTimer = null;
 
     if (speed >= TILT_THRESHOLD && mot.wasStable) {
-      // Fast deliberate tilt after stability window — fire!
       mot.wasStable = false;
       mot.cooldown  = true;
-      setTimeout(() => { mot.cooldown = false; }, 3000);
-      socket.emit('turn_complete');
+      // Shorter cooldown in final round so tilt-1 → tilt-2 can happen within ~2s
+      const cooldownMs = S.isFinalRound ? 1800 : 3000;
+      setTimeout(() => { mot.cooldown = false; }, cooldownMs);
+
+      if (S.isFinalRound) {
+        handleFinalRoundTilt();
+      } else {
+        socket.emit('turn_complete');
+      }
     } else if (speed < TILT_THRESHOLD) {
-      // Slow movement (head turn, shifting) — just mark unstable
       mot.wasStable = false;
     }
   }
@@ -401,21 +410,183 @@ function setMotionStatus(msg) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+//  DING SOUND
+// ─────────────────────────────────────────────────────────────────────────────
+
+function playDing() {
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    const ctx = new AC();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(1046, ctx.currentTime);        // C6
+    osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.15); // A5
+    osc.frequency.exponentialRampToValueAtTime(1046, ctx.currentTime + 0.35);
+    gain.gain.setValueAtTime(0.55, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.7);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.7);
+  } catch (_) {}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  FINAL ROUND — tilt-to-record logic
+// ─────────────────────────────────────────────────────────────────────────────
+
+function startFinalRoundTurn() {
+  finalVoice.recording  = false;
+  finalVoice.position   = null;
+  finalVoice.cardNum    = null;
+  finalVoice.transcript = '';
+  playDing();
+  vibrateGreen();
+  updateFinalOverlay('waiting');
+}
+
+function handleFinalRoundTilt() {
+  if (!S.myTurn || !S.isFinalRound) return;
+
+  if (!finalVoice.recording) {
+    // Tilt 1 — start recording
+    finalVoice.recording  = true;
+    finalVoice.transcript = '';
+    finalVoice.position   = null;
+    finalVoice.cardNum    = null;
+    updateFinalOverlay('recording');
+    vibrateShort();
+    if (speechRec) {
+      try { speechRec.start(); } catch (_) {}
+    }
+  } else {
+    // Tilt 2 — stop recording and submit
+    finalVoice.recording = false;
+    updateFinalOverlay('submitting');
+    if (speechRec) {
+      try { speechRec.stop(); } catch (_) {}
+    }
+    setTimeout(() => submitFinalGuess(), 600);
+  }
+}
+
+function submitFinalGuess() {
+  const pos  = finalVoice.position;
+  const card = finalVoice.cardNum;
+
+  if (pos === null || card === null) {
+    // Couldn't parse — let them try again
+    updateFinalOverlay('failed');
+    setTimeout(() => {
+      if (S.myTurn && S.isFinalRound) updateFinalOverlay('waiting');
+    }, 2500);
+    return;
+  }
+
+  socket.emit('submit_final_guess', { position: pos, card_numeric: card });
+  updateFinalOverlay('submitted');
+}
+
+function updateFinalOverlay(state) {
+  const overlay    = document.getElementById('final-round-overlay');
+  const statusEl   = document.getElementById('fro-status');
+  const transEl    = document.getElementById('fro-transcript');
+  const parsedEl   = document.getElementById('fro-parsed');
+  const manualStart = document.getElementById('fro-manual-start');
+  const manualStop  = document.getElementById('fro-manual-stop');
+  if (!overlay) return;
+
+  overlay.classList.remove('recording');
+  manualStart.classList.add('hidden');
+  manualStop.classList.add('hidden');
+
+  if (state === 'waiting') {
+    statusEl.textContent  = 'YOUR TURN — Tilt to start speaking';
+    transEl.textContent   = '';
+    parsedEl.textContent  = '';
+    manualStart.classList.remove('hidden');
+  } else if (state === 'recording') {
+    statusEl.textContent = 'Recording… Tilt again to submit';
+    overlay.classList.add('recording');
+    manualStop.classList.remove('hidden');
+  } else if (state === 'submitting') {
+    statusEl.textContent = 'Locking in guess…';
+  } else if (state === 'submitted') {
+    statusEl.textContent = '✓ Guess locked in!';
+    transEl.textContent  = '';
+    parsedEl.textContent = '';
+  } else if (state === 'failed') {
+    statusEl.textContent  = "Couldn't parse guess — tilt to try again";
+    parsedEl.textContent  = 'Say e.g. "second lowest, seven"';
+    manualStart.classList.remove('hidden');
+  } else if (state === 'watching') {
+    statusEl.textContent  = `Waiting for ${S.currentPlayer}…`;
+    transEl.textContent   = '';
+    parsedEl.textContent  = '';
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 //  CARD RENDERING
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ─── Pip layout tables ──────────────────────────────────────────────────────
+// Each entry: [leftPct, topPct, rotated]
+// Positions measured across the pip-area div (0–100%)
+const PIP_LAYOUTS = {
+  '2':  [[50,15,false],[50,85,true]],
+  '3':  [[50,12,false],[50,50,false],[50,88,true]],
+  '4':  [[28,20,false],[72,20,false],[28,80,true],[72,80,true]],
+  '5':  [[28,20,false],[72,20,false],[50,50,false],[28,80,true],[72,80,true]],
+  '6':  [[28,18,false],[72,18,false],[28,50,false],[72,50,false],[28,82,true],[72,82,true]],
+  '7':  [[28,15,false],[72,15,false],[50,35,false],[28,55,false],[72,55,false],[28,80,true],[72,80,true]],
+  '8':  [[28,13,false],[72,13,false],[50,30,false],[28,50,false],[72,50,false],[50,70,true],[28,87,true],[72,87,true]],
+  '9':  [[28,12,false],[72,12,false],[28,33,false],[72,33,false],[50,50,false],[28,67,true],[72,67,true],[28,88,true],[72,88,true]],
+  '10': [[28,10,false],[72,10,false],[50,26,false],[28,42,false],[72,42,false],[28,58,true],[72,58,true],[50,74,true],[28,90,true],[72,90,true]],
+};
+
+const FACE_LABELS = { J: 'Jack', Q: 'Queen', K: 'King' };
+const FACE_GLYPHS = { J: 'J', Q: 'Q', K: 'K' };
+
 function renderGameCard(data) {
   const card = document.getElementById('game-card');
-  card.className = 'card ' + (data.color === 'red' ? 'card-red' : 'card-black');
+  const isRed = data.color === 'red';
+  card.className = 'card ' + (isRed ? 'card-red' : 'card-black');
 
-  const val    = displayValue(data.value);
-  const sym    = data.symbol;
+  const val = data.value;
+  const sym = data.symbol;
+  const dispVal = displayValue(val);
 
-  document.getElementById('tl-value').textContent     = val;
-  document.getElementById('tl-suit').textContent      = sym;
-  document.getElementById('center-suit').textContent  = sym;
-  document.getElementById('br-value').textContent     = val;
-  document.getElementById('br-suit').textContent      = sym;
+  document.getElementById('tl-value').textContent = dispVal;
+  document.getElementById('tl-suit').textContent  = sym;
+  document.getElementById('br-value').textContent = dispVal;
+  document.getElementById('br-suit').textContent  = sym;
+
+  const center = document.getElementById('card-center-area');
+  const pipColor = isRed ? 'pip-red' : 'pip-black';
+  const faceColor = isRed ? 'var(--red-suit)' : '#111';
+
+  if (val === 'A') {
+    center.innerHTML = `<div class="pip pip-ace ${pipColor}">${sym}</div>`;
+  } else if (PIP_LAYOUTS[val]) {
+    const pips = PIP_LAYOUTS[val].map(([l, t, rot]) =>
+      `<span class="pip ${pipColor}${rot ? ' rot' : ''}" style="left:${l}%;top:${t}%">${sym}</span>`
+    ).join('');
+    center.innerHTML = `<div class="pip-area">${pips}</div>`;
+  } else {
+    // Face card — J / Q / K
+    center.innerHTML = `
+      <div class="face-card" style="color:${faceColor}">
+        <div class="face-label">${FACE_LABELS[val] || val}</div>
+        <div class="face-inner">
+          <div class="face-glyph">${FACE_GLYPHS[val] || val}</div>
+          <div class="face-suit-row">${sym}${sym}${sym}</div>
+        </div>
+        <div class="face-label" style="transform:rotate(180deg)">${FACE_LABELS[val] || val}</div>
+      </div>`;
+  }
 }
 
 function displayValue(v) {
@@ -586,23 +757,39 @@ function setupSpeech() {
                              : (interim += e.results[i][0].transcript));
     }
     const text = final || interim;
-    document.getElementById('transcript').textContent = text ? `"${text}"` : '';
-    if (final) {
-      const parsed = parseGuess(final);
-      applyParsedGuess(parsed);
+
+    if (S.isFinalRound) {
+      // Update the final-round overlay with live transcript
+      const transEl  = document.getElementById('fro-transcript');
+      const parsedEl = document.getElementById('fro-parsed');
+      if (transEl) transEl.textContent = text ? `"${text}"` : '';
+      if (final) {
+        const parsed = parseGuess(final);
+        finalVoice.transcript = final;
+        if (parsed.position   !== null) finalVoice.position = parsed.position;
+        if (parsed.cardNumeric !== null) finalVoice.cardNum  = parsed.cardNumeric;
+        let parts = [];
+        if (finalVoice.position !== null) parts.push(POSITION_NAMES[finalVoice.position]);
+        if (finalVoice.cardNum  !== null) parts.push(CARD_VALUES[finalVoice.cardNum - 1]);
+        if (parsedEl) parsedEl.textContent = parts.length ? parts.join(' · ') : '(nothing parsed)';
+      }
+    } else {
+      document.getElementById('transcript').textContent = text ? `"${text}"` : '';
+      if (final) {
+        const parsed = parseGuess(final);
+        applyParsedGuess(parsed);
+      }
     }
   };
 
   speechRec.onend = () => {
     const btn = document.getElementById('mic-btn');
-    btn.classList.remove('recording');
-    btn.textContent = '🎤 Speak Your Guess';
+    if (btn) { btn.classList.remove('recording'); btn.textContent = '🎤 Speak Your Guess'; }
   };
 
   speechRec.onerror = () => {
     const btn = document.getElementById('mic-btn');
-    btn.classList.remove('recording');
-    btn.textContent = '🎤 Speak Your Guess';
+    if (btn) { btn.classList.remove('recording'); btn.textContent = '🎤 Speak Your Guess'; }
   };
 }
 
@@ -918,10 +1105,30 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   motBtn.addEventListener('click', requestMotionPermissionExplicit);
 
-  // ── Game: manual "done" button (tilt fallback) ────────────────────────────
+  // ── Game: manual "done" button (tilt fallback, playing rounds) ───────────
   document.getElementById('manual-done-btn').addEventListener('click', () => {
     if (S.myTurn && !S.isFinalRound) {
       socket.emit('turn_complete');
+    }
+  });
+
+  // ── Final round: manual start/stop recording (tilt fallback) ─────────────
+  document.getElementById('fro-manual-start').addEventListener('click', () => {
+    if (S.myTurn && S.isFinalRound && !finalVoice.recording) {
+      finalVoice.recording  = true;
+      finalVoice.transcript = '';
+      finalVoice.position   = null;
+      finalVoice.cardNum    = null;
+      updateFinalOverlay('recording');
+      if (speechRec) { try { speechRec.start(); } catch (_) {} }
+    }
+  });
+  document.getElementById('fro-manual-stop').addEventListener('click', () => {
+    if (S.myTurn && S.isFinalRound && finalVoice.recording) {
+      finalVoice.recording = false;
+      if (speechRec) { try { speechRec.stop(); } catch (_) {} }
+      updateFinalOverlay('submitting');
+      setTimeout(() => submitFinalGuess(), 600);
     }
   });
 
